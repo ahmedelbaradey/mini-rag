@@ -11,7 +11,8 @@ class Asset(BaseModel):
     asset_type :str = Field(...,min_length=1)
     asset_name: str = Field(...,min_length=1)
     asset_size: int = Field(ge=0, default=None)
-    asset_pushed_at : datetime = Field(default =datetime.now())
+    asset_pushed_at : datetime = Field(default = datetime.now())
+
 
     @classmethod
     def get_indexes(cls):
