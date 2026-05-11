@@ -25,7 +25,14 @@ class CoHereProvider(LLMInterface):
     
             self.enums = CoHereEnums
             self.logger = logging.getLogger(__name__)
-            
+
+        def set_generation_model(self, model_id: str):
+            self.generation_model_id = model_id
+
+        def set_embedding_model(self, model_id: str, embedding_size: int):
+            self.embedding_model_id = model_id
+            self.embedding_size = embedding_size
+
         def process_text(self, text: str):
 
             return text[:self.default_input_max_characters].strip()

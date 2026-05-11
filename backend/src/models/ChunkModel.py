@@ -46,13 +46,14 @@ class ChunkModel(BaseDataModel):
     async def insert_many_chunks(self,chunks:list,batch_size:int = 100):
 
         for i in range(0,len(chunks),batch_size):
-            batch = chunks[i:1+batch_size]
+            batch = chunks[i:i+batch_size]
 
             operations = [
                 InsertOne(chunk.dict(by_alias=True,exclude_unset = True))
                 for chunk in batch
             ]
-            await self.collection.bulk_write(operations)
+            if operations:  # Only execute if there are operations
+                await self.collection.bulk_write(operations)
 
         return len(chunks)
 
@@ -61,6 +62,14 @@ class ChunkModel(BaseDataModel):
             "chunk_project_id":project_id
         })
         return result.deleted_count
+    
+    async def get_project_chunks(self, project_id: ObjectId, last_id: ObjectId = None, page_size: int = 500):
+        query = {"chunk_project_id": project_id}
+        if last_id:
+            query["_id"] = {"$gt": last_id} # Only get records AFTER the last one
+        
+        results = await self.collection.find(query).sort("_id", 1).limit(page_size).to_list(length=None)
+        return [DataChunk(**record) for record in results]
     
  
 

@@ -4,10 +4,13 @@ python-multipart==0.0.20
 python-dotenv==1.2.1
 pydantic-settings==2.12.0
 aiofiles==25.1.0
-langchain==1.2.15
+langchain
+langchain-community
+langchain-core
+langchain-text-splitters
 PyMuPDF==1.27.2.2
 motor==3.7.1
 pydantic-mongo==3.1.0
 openai==2.33.0
 cohere==6.1.0
-qdrant-cleint==1.17.1
+qdrant-client==1.17.1

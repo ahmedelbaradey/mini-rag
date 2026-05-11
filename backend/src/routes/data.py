@@ -157,7 +157,9 @@ async def process_endpoint(request:Request,project_id : str , process_request : 
 
     for asset_id,file_id in project_files_ids.items():
 
+
         file_content = process_controller.get_file_content(file_id= file_id)
+    
 
         if file_content is None:
             logger.error(f"Error while processing file: {file_id}" )
