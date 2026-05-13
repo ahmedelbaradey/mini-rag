@@ -1,4 +1,4 @@
-from qdrant_client import models, QdrantClient 
+from qdrant_client import models, QdrantClient
 from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import DistanceMethodEnums
 import logging
@@ -7,21 +7,24 @@ from models.db_schemes import RetrievedDocument
 
 class QdrantDBProvider(VectorDBInterface):
 
-    def __init__(self, db_path: str, distance_method: str):
+    def __init__(self, db_client: str, default_vector_size: int = 786,
+                                     distance_method: str = None, index_threshold: int=100):
 
         self.client = None
-        self.db_path = db_path
+        self.db_client = db_client
         self.distance_method = None
- 
+        self.default_vector_size = default_vector_size
+
         if distance_method == DistanceMethodEnums.COSINE.value:
             self.distance_method = models.Distance.COSINE
         elif distance_method == DistanceMethodEnums.DOT.value:
             self.distance_method = models.Distance.DOT
 
-        self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger('uvicorn')
 
+        
     def connect(self):
-        self.client = QdrantClient(path=self.db_path)
+        self.client = QdrantClient(path=self.db_client)
 
     def disconnect(self):
         self.client = None
@@ -37,6 +40,7 @@ class QdrantDBProvider(VectorDBInterface):
     
     def delete_collection(self, collection_name: str):
         if self.is_collection_existed(collection_name):
+            self.logger.info(f"Deleting collection: {collection_name}")
             return self.client.delete_collection(collection_name=collection_name)
         
     def create_collection(self, collection_name: str, 
@@ -47,14 +51,12 @@ class QdrantDBProvider(VectorDBInterface):
         
         if not self.is_collection_existed(collection_name):
             self.logger.info(f"Creating new Qdrant collection: {collection_name}")
+            
             _ = self.client.create_collection(
                 collection_name=collection_name,
                 vectors_config=models.VectorParams(
                     size=embedding_size,
-                    distance=self.distance_method,
-                    multivector_config=models.MultiVectorConfig(
-                    comparator=models.MultiVectorComparator.MAX_SIM
-                   )
+                    distance=self.distance_method
                 )
             )
 
@@ -71,11 +73,11 @@ class QdrantDBProvider(VectorDBInterface):
             return False
         
         try:
-            _ = self.client.upload_records(
+            _ = self.client.upsert(
                 collection_name=collection_name,
-                records=[
-                    models.Record(
-                        id=[record_id],
+                points=[
+                    models.PointStruct(
+                        id=record_id,
                         vector=vector,
                         payload={
                             "text": text, "metadata": metadata
@@ -89,59 +91,63 @@ class QdrantDBProvider(VectorDBInterface):
 
         return True
     
-    def insert_many(self, collection_name: str, texts: list, vectors: list, metadata: list = None, record_ids: list = None):
-        # Ensure metadata and ids match the batch size if not provided
-        if metadata is None: metadata = [None] * len(texts)
-        if record_ids is None: record_ids = list(range(0, len(texts)))
-    
-        # 1. Map your lists into PointStruct objects
-        points = [
-            models.PointStruct(
-                id=record_ids[x],
-                vector=vectors[x],
-                payload={
-                    "text": texts[x],
-                    "metadata": metadata[x]
-                }
-            )
-            for x in range(len(texts))
-        ]
-
-
-    
-        try:
-            # 2. Use upsert for pre-batched PointStructs
-            self.client.upsert(
-                collection_name=collection_name,
-                points=points,
-                wait=False  # Crucial for speed when handling millions of records
-            )
-            return True
-        except Exception as e:
-            self.logger.error(f"Error while inserting batch: {e}")
-            return False
+    def insert_many(self, collection_name: str, texts: list, 
+                          vectors: list, metadata: list = None, 
+                          record_ids: list = None, batch_size: int = 50):
         
-    def search_by_vector(self, collection_name: str, vector: list, limit: int):
-        try:
-            results =  self.client.query_points(
-                collection_name=collection_name,
-                query=vector,
-                limit=limit
-            )
-            if not results:
-                return None
-            result =  [
-                RetrievedDocument(**{
-                    "score": result.score,
-                    "text": result.payload["text"],
-                })
-                for result in results.points
+        if metadata is None:
+            metadata = [None] * len(texts)
+
+        if record_ids is None:
+            record_ids = list(range(0, len(texts)))
+
+        for i in range(0, len(texts), batch_size):
+            batch_end = i + batch_size
+
+            batch_texts = texts[i:batch_end]
+            batch_vectors = vectors[i:batch_end]
+            batch_metadata = metadata[i:batch_end]
+            batch_record_ids = record_ids[i:batch_end]
+
+            batch_points = [
+                models.PointStruct(
+                    id=batch_record_ids[x],
+                    vector=batch_vectors[x],
+                    payload={
+                        "text": batch_texts[x], "metadata": batch_metadata[x]
+                    }
+                )
+
+                for x in range(len(batch_texts))
             ]
 
+            try:
+                _ = self.client.upsert(
+                    collection_name=collection_name,
+                    points=batch_points,
+                )
+            except Exception as e:
+                self.logger.error(f"Error while inserting batch: {e}")
+                return False
 
-            return result
-        except Exception as e:
-            self.logger.error(f"Error while search vector: {e}")
-            return False
+        return True
         
-    
+    def search_by_vector(self, collection_name: str, vector: list, limit: int = 5):
+        # 1. Use query_points instead of the deprecated/removed search method
+        response = self.client.query_points(
+            collection_name=collection_name,
+            query=vector,  # 2. The parameter is now 'query', not 'query_vector'
+            limit=limit
+        )
+
+        # 3. query_points returns a QueryResponse object, so we look inside its .points attribute
+        if not response or not response.points:
+            return None
+        
+        return [
+            RetrievedDocument(**{
+                "score": point.score,
+                "text": point.payload.get("text", ""), # Safer dictionary access
+            })
+            for point in response.points
+        ]

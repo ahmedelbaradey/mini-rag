@@ -34,7 +34,6 @@ class CoHereProvider(LLMInterface):
             self.embedding_size = embedding_size
 
         def process_text(self, text: str):
-
             return text[:self.default_input_max_characters].strip()
         
         
@@ -66,31 +65,34 @@ class CoHereProvider(LLMInterface):
             
             return response.text        
         
-        def embed_text(self, text: str, document_type: str = None):
+        def embed_text(self, text: Union[str, List[str]], document_type: str = None):
             if not self.client:
                 self.logger.error("CoHere client was not set")
                 return None
-                
+            
+            if isinstance(text, str):
+                text = [text]
+            
             if not self.embedding_model_id:
                 self.logger.error("Embedding model for CoHere was not set")
-                return None            
+                return None
             
             input_type = CoHereEnums.DOCUMENT
             if document_type == DocumentTypeEnum.QUERY:
-                input_type = CoHereEnums.QUERY   
-
+                input_type = CoHereEnums.QUERY
+    
             response = self.client.embed(
                 model = self.embedding_model_id,
-                texts =[self.process_text(text)] ,
+                texts = [ self.process_text(t) for t in text ],
                 input_type = input_type,
                 embedding_types=['float'],
             )
-
+    
             if not response or not response.embeddings or not response.embeddings.float:
                 self.logger.error("Error while embedding text with CoHere")
                 return None
             
-            return response.embeddings.float
+            return [ f for f in response.embeddings.float ]
         
         def construct_prompt(self, prompt: str, role: str):
             return {
