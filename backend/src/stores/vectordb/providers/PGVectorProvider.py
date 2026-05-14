@@ -102,7 +102,7 @@ class PGVectorProvider(VectorDBInterface):
     async def delete_collection(self, collection_name: str):
         async with self.db_client() as session:
             async with session.begin():
-                self.logger.info(f"Deleting collection: {collection_name}")
+                self.logger.info(f"Deleting collection PGVECTOR: {collection_name}")
 
                 delete_sql = sql_text(f'DROP TABLE IF EXISTS {collection_name}')
                 await session.execute(delete_sql)
@@ -113,11 +113,12 @@ class PGVectorProvider(VectorDBInterface):
     async def create_collection(self, collection_name: str,
                                       embedding_size: int,
                                       do_reset: bool = False):
+        is_collection_existed = await self.is_collection_existed(collection_name=collection_name)
         
-        if do_reset:
+        if do_reset :
             _ = await self.delete_collection(collection_name=collection_name)
 
-        is_collection_existed = await self.is_collection_existed(collection_name=collection_name)
+        
         if not is_collection_existed:
             self.logger.info(f"Creating collection: {collection_name}")
             async with self.db_client() as session:
